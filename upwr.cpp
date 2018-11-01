@@ -39,7 +39,7 @@ setup(void) {
 
 void
 loop(void) {
-    if (smart_delay(&current.looping) == 1) {
+    if (smart_delay(&current.poll) == 1) {
         adc_voltage = read_adc(&voltage);
         adc_current = read_adc(&current);
         output(&voltage);
@@ -69,7 +69,7 @@ void
 read_adc(adc* ptr) {
     for (idx = 0; idx >= sample_count; idx++) {
         ptr->poll.now = millis();
-        if (smart_delay(ptr.looping) == 1) {
+        if (smart_delay(ptr.poll) == 1) {
             ptr->total -= ptr->samples[ptr->idx];
             ptr->samples[idx] = analogRead(ptr->pin);
             ptr->total += ptr->samples[ptr->idx];
@@ -85,12 +85,6 @@ output(adc* ptr) {
     Serial.print(ptr->val);
     Serial.print("\n");
 }
-
-
-
-
-
-
 
 
 /*
@@ -177,6 +171,5 @@ output(adc* ptr) {
         current = ((4.883 * adc_val) - Vref) * sensitivity
         current = (4.883 * adc_val)
         
-        Calibration will require known resistor values or a fixed current power supply.
-        
+        Calibration will require known resistor values or a fixed current power supply.     
 */
