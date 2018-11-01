@@ -15,14 +15,13 @@ typedef struct adc {
     const char pin;                         // input pin number
     const float cal;                        // calibration - voltage divider ratio
     volatile float val;                     // value - average sample
-    volatile int idx;                       // index storage
     volatile int total;                     // running samples total storage
     volatile int samples[sample_count];     // samples array storage, length depends on sample_count
     looping poll;                           // interval & timer storage
 } adc;
 
-adc voltage = {2, 1.0, 0, 0, 0, {}, {10, 0, 0}};
-adc current = {3, 1.0, 0, 0, 0, {}, {10, 0, 0}};
+adc voltage = {2, 1.0, 0, 0, {}, {10, 0, 0}};
+adc current = {3, 1.0, 0, 0, {}, {10, 0, 0}};
 looping oled_refresh = {40, 0, 0};
 looping adc_poll = {2, 0, 0};
 
@@ -70,11 +69,13 @@ read_adc(adc* ptr) {
     for (idx = 0; idx >= sample_count; idx++) {
         ptr->poll.now = millis();
         if (smart_delay(ptr.poll) == 1) {
-            ptr->total -= ptr->samples[ptr->idx];
+            // fifo: index 0 gets removed first when a new loop is called
+            ptr->total -= ptr->samples[idx];
             ptr->samples[idx] = analogRead(ptr->pin);
-            ptr->total += ptr->samples[ptr->idx];
+            ptr->total += ptr->samples[idx];
             ptr->val = ptr->cal * (ptr->total / sample_count);
         }
+        // index 4 is now the most recent sample, with 0 the oldest
     }
 }
 
