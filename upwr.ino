@@ -1,7 +1,9 @@
-#include <Arduino.h>
 #include <Wire.h>
-#include "SFE_MicroOLED.h"
+#include <SFE_MicroOLED_mod.h>
+#include "./upwr.h"
 
+
+MicroOLED oled(9, 0);                       // SparkFun OLED lib init
 
 const int sample_count = 5;                 // more is smoother transistions but longer time
 
@@ -25,12 +27,14 @@ adc current = {3, 1.0, 0, 0, {}, {10, 0, 0}};
 looping oled_refresh = {40, 0, 0};
 looping adc_poll = {2, 0, 0};
 
+
 void
 setup(void) {
-    MicroOLED oled(9, 0); // SparkFun OLED lib init
     pinMode(voltage.pin, INPUT);
     pinMode(current.pin, INPUT);
     oled.begin();
+    oled.clear(ALL);
+    oled.display();
     oled.setFontType(0);
     oled.setCursor(0, 0);
     Serial.begin(9600);
@@ -39,23 +43,26 @@ setup(void) {
 void
 loop(void) {
     if (smart_delay(&current.poll) == 1) {
-        adc_voltage = read_adc(&voltage);
-        adc_current = read_adc(&current);
+        read_adc(&voltage);
+        read_adc(&current);
         output(&voltage);
         output(&current);
     }
     if (smart_delay(&oled_refresh) == 1) {
         oled.setCursor(0, 0);
-        oled.print(current.now);
+        oled.print("Hello");
+        oled.print(current.poll.now);
         oled.setCursor(1, 0);
-        oled.print(reading);
+        oled.print(current.val);
         oled.display();
     }
+    Serial.println("Hello\n");
+    delay(10);
 }
 
 // not patched for wrap around!
 int
-smart_delay(looping* ptr) {
+smart_delay(looping *ptr) {
     ptr->now = millis();
     if (ptr->now - ptr->past >= ptr->inv) {
         ptr->past = ptr->now;
@@ -65,10 +72,10 @@ smart_delay(looping* ptr) {
 }
 
 void
-read_adc(adc* ptr) {
-    for (idx = 0; idx >= sample_count; idx++) {
+read_adc(adc *ptr) {
+    for (int idx = 0; idx >= sample_count; idx++) {
         ptr->poll.now = millis();
-        if (smart_delay(ptr.poll) == 1) {
+        if (smart_delay(&ptr->poll) == 1) {
             // fifo: index 0 gets removed first when a new loop is called
             ptr->total -= ptr->samples[idx];
             ptr->samples[idx] = analogRead(ptr->pin);
@@ -80,7 +87,7 @@ read_adc(adc* ptr) {
 }
 
 void
-output(adc* ptr) {
+output(adc *ptr) {
     Serial.print(ptr->poll.now);
     Serial.print(",");
     Serial.print(ptr->val);
@@ -104,11 +111,10 @@ output(adc* ptr) {
                                R₂
           V_out = V_in   ×  ―――――――――
                             (R₁ + R₂)
-
       Measure your own resistor values with a DMM and plug those into the equation
       Resistors
-          R_1 = 14,750 Ω (ohm)
-          R_2 =  4,675 Ω (ohm)
+          R_1 = 14,750 Ω (ohm)
+          R_2 =  4,675 Ω (ohm)
           R_1 + R_2 = 19,425
           V_ratio = (4,675 / 19,425) = 0.24067
       Voltages
