@@ -85,6 +85,8 @@ read_adc(adc *ptr) {
             // average the most recent samples, normalize meas with cal, convert to actual
             ptr->val = ptr->cal * (ptr->total / sample_count);
         }
+    // while inside the for loop, val only gets updated every sample_count samples instead of free running
+    // if intercepted inside the for loop, the display or serial could update more frequent nuances in value
     }
 }
 
