@@ -45,22 +45,21 @@ loop(void) {
     if (smart_delay(&current.poll) == 1) {
         read_adc(&voltage);
         read_adc(&current);
-        output(&voltage);
-        output(&current);
     }
     if (smart_delay(&oled_refresh) == 1) {
+        // serial
+        output_serial(&voltage);
+        output_serial(&current);
+        // oled
         oled.setCursor(0, 0);
-        oled.print("Hello");
         oled.print(current.poll.now);
         oled.setCursor(1, 0);
         oled.print(current.val);
         oled.display();
     }
-    Serial.println("Hello\n");
-    delay(10);
 }
 
-// not patched for wrap around!
+// not yet patched for wrap around!
 int
 smart_delay(looping *ptr) {
     ptr->now = millis();
@@ -73,21 +72,24 @@ smart_delay(looping *ptr) {
 
 void
 read_adc(adc *ptr) {
+    // fifo: index 0 gets removed first when a new loop is called
     for (int idx = 0; idx >= sample_count; idx++) {
         ptr->poll.now = millis();
         if (smart_delay(&ptr->poll) == 1) {
-            // fifo: index 0 gets removed first when a new loop is called
+            // take the old indexed sample out of the stored total
             ptr->total -= ptr->samples[idx];
+            // store sample from the adc in this index
             ptr->samples[idx] = analogRead(ptr->pin);
+            // add this new sample index to the stored total
             ptr->total += ptr->samples[idx];
+            // average the most recent samples, normalize meas with cal, convert to actual
             ptr->val = ptr->cal * (ptr->total / sample_count);
         }
-        // index 4 is now the most recent sample, with 0 the oldest
     }
 }
 
 void
-output(adc *ptr) {
+output_serial(adc *ptr) {
     Serial.print(ptr->poll.now);
     Serial.print(",");
     Serial.print(ptr->val);
