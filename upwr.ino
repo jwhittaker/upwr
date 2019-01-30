@@ -1,29 +1,38 @@
 #include <Wire.h>
-#include <SFE_MicroOLED_mod.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_GFX.h>
 #include "./upwr.h"
 
+#define OLED_RESET 4
+Adafruit_SSD1306 display(OLED_RESET);
 
-MicroOLED oled(9, 0);                       // SparkFun OLED lib init
-
-const int sample_count = 5;                 // more is smoother transistions but longer time
+const int sample_count = 5;              // more is smoother transistions but longer time
 
 typedef struct looping {
-    const long inv;                         // millisecond interval to poll
-    volatile unsigned long now;             // current millis()
-    volatile unsigned long past;            // previous millis()
+    const long inv;                      // millisecond interval to poll
+    volatile unsigned long now;          // current millis()
+    volatile unsigned long past;         // previous millis()
 } looping;
 
 typedef struct adc {
-    const char pin;                         // input pin number
-    const float cal;                        // calibration - voltage divider ratio
-    volatile float val;                     // value - average sample
-    volatile int total;                     // running samples total storage
-    volatile int samples[sample_count];     // samples array storage, length depends on sample_count
-    looping poll;                           // interval & timer storage
+    int pin;                      // input pin number
+    const float cal;                     // calibration - voltage divider ratio
+    volatile float val;                  // value - average sample
+    volatile int total;                  // running samples total storage
+    volatile int samples[sample_count];  // samples array storage, length depends on sample_count
+    looping poll;                        // interval & timer storage
 } adc;
 
-adc voltage = {2, 1.0, 0, 0, {}, {10, 0, 0}};
-adc current = {3, 1.0, 0, 0, {}, {10, 0, 0}};
+/*
+analog pin layout
+    A3 = 21
+    A2 = 20 <- fried with 9V
+    A1 = 19
+    A0 = 18
+*/
+
+adc voltage = {A1, 1.0, 0, 0, {}, {10, 0, 0}};
+adc current = {A3, 1.0, 0, 0, {}, {10, 0, 0}};
 looping oled_refresh = {40, 0, 0};
 looping adc_poll = {2, 0, 0};
 
@@ -32,11 +41,13 @@ void
 setup(void) {
     pinMode(voltage.pin, INPUT);
     pinMode(current.pin, INPUT);
-    oled.begin();
-    oled.clear(ALL);
-    oled.display();
-    oled.setFontType(0);
-    oled.setCursor(0, 0);
+    
+    display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    display.display();
+    display.setTextSize(2);
+    display.setTextColor(WHITE);
+    display.clearDisplay();
+
     Serial.begin(9600);
 }
 
@@ -45,21 +56,23 @@ loop(void) {
     if (smart_delay(&current.poll) == 1) {
         read_adc(&voltage);
         read_adc(&current);
+        output(&voltage);
+        output(&current);
     }
     if (smart_delay(&oled_refresh) == 1) {
-        // serial
-        output_serial(&voltage);
-        output_serial(&current);
-        // oled
-        oled.setCursor(0, 0);
-        oled.print(current.poll.now);
-        oled.setCursor(1, 0);
-        oled.print(current.val);
-        oled.display();
+        display.clearDisplay();
+        display.setCursor(0, 0);
+        display.println(current.poll.now);
+        display.print(analogRead(A3));
+        display.setCursor(64, 16);
+        display.print(analogRead(A1));
+        //display.println(voltage.poll.now); //this is just the current time
+        //display.println(voltage.val);
+        display.display();
     }
 }
 
-// not yet patched for wrap around!
+// not patched for arduino's 32bit wrap around!
 int
 smart_delay(looping *ptr) {
     ptr->now = millis();
@@ -72,34 +85,36 @@ smart_delay(looping *ptr) {
 
 void
 read_adc(adc *ptr) {
-    // fifo: index 0 gets removed first when a new loop is called
     for (int idx = 0; idx >= sample_count; idx++) {
         ptr->poll.now = millis();
         if (smart_delay(&ptr->poll) == 1) {
-            // take the old indexed sample out of the stored total
+            // fifo: index 0 gets removed first when a new loop is called
             ptr->total -= ptr->samples[idx];
-            // store sample from the adc in this index
             ptr->samples[idx] = analogRead(ptr->pin);
-            // add this new sample index to the stored total
             ptr->total += ptr->samples[idx];
-            // average the most recent samples, normalize meas with cal, convert to actual
             ptr->val = ptr->cal * (ptr->total / sample_count);
         }
-    // while inside the for loop, val only gets updated every sample_count samples instead of free running
-    // if intercepted inside the for loop, the display or serial could update more frequent nuances in value
+        // index 4 is now the most recent sample, with 0 the oldest
     }
 }
 
 void
-output_serial(adc *ptr) {
+output(adc *ptr) {
+    Serial.print(ptr->pin);
+    Serial.print(", ");
     Serial.print(ptr->poll.now);
-    Serial.print(",");
+    Serial.print(", ");
     Serial.print(ptr->val);
     Serial.print("\n");
 }
 
 
 /*
+  Hardware Notes
+  
+need to double check r1 and r2 being swapped
+
+
   Setting Up Calibration Values
   
   1) Analog to Digital Converter Values (ADC)
@@ -145,21 +160,23 @@ output_serial(adc *ptr) {
          937 * cal = 19.0 V
          986 * cal = 20.0 V
         1023 * cal = 20.7 V
+
+        Voltage Divider Drawing
                   
                    +---------+
                    |         |
-                   |         \
-                   |         / R_1
-                   |         \  (14.7k)
-          (12V) +  |         / 
+                   |         Z
+                   |         Z R_1
+                   |         Z  (14.7k)
+          (12V) +  |         | 
           V_in  _______      |
-                  ___        +---------------o Analog Read Pin
+                  ___        +-------------------o Analog Read Pin
                 -  |         |           ^
                    |         |           .
-                   |         \           .
-                   |         / R_2     V_out (2.88V)
-                   |         \  (4.7k)   .
-                   |         /           .
+                   |         Z           .
+                   |         Z R_2     V_out (2.88V)
+                   |         Z  (4.7k)   .
+                   |         |           .
                    |         |           .
                    +----+----+ <.......... 
                         |
